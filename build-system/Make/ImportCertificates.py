@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import shlex
 
 from BuildEnvironment import run_executable_with_output
 
@@ -13,7 +14,8 @@ def import_certificates(certificatesPath):
     keychain_password = 'secret'
 
     existing_keychains = run_executable_with_output('security', arguments=['list-keychains'], check_result=True)
-    if keychain_name in existing_keychains:
+    keychain_paths = shlex.split(existing_keychains)
+    if any(os.path.basename(path).startswith(keychain_name) for path in keychain_paths):
         # The keychain name is required. Without it `security` fails with
         # "SecKeychainDelete: The specified keychain is not a valid keychain file",
         # which only happens on a second build inside one VM -- unreachable while every
@@ -28,7 +30,7 @@ def import_certificates(certificatesPath):
     ], check_result=True)
 
     existing_keychains = run_executable_with_output('security', arguments=['list-keychains', '-d', 'user'])
-    existing_keychains.replace('"', '')
+    keychain_paths = shlex.split(existing_keychains)
 
     run_executable_with_output('security', arguments=[
         'list-keychains',
@@ -36,7 +38,7 @@ def import_certificates(certificatesPath):
         'user',
         '-s',
         keychain_name,
-        existing_keychains
+        *keychain_paths
     ], check_result=True)
 
     run_executable_with_output('security', arguments=['set-keychain-settings', keychain_name])
@@ -56,7 +58,7 @@ def import_certificates(certificatesPath):
                 '/usr/bin/codesign',
                 '-T',
                 '/usr/bin/security'
-            ], check_result=False)
+            ], check_result=file_path.endswith('.p12'))
 
     run_executable_with_output('security', arguments=[
         'import',
@@ -79,6 +81,14 @@ def import_certificates(certificatesPath):
         keychain_password,
         keychain_name
     ], check_result=True)
+
+    identities = run_executable_with_output('security', arguments=[
+        'find-identity', '-v', '-p', 'codesigning', keychain_name
+    ], check_result=True)
+    if 'valid identities found' not in identities or '0 valid identities found' in identities:
+        print('No valid code-signing identity was imported into {}'.format(keychain_name))
+        print(identities)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
