@@ -59,6 +59,13 @@ def import_certificates(certificatesPath):
                 '-T',
                 '/usr/bin/security'
             ], check_result=file_path.endswith('.p12'))
+            if file_name == 'Public.cer':
+                # The fake signing certificate is self-signed. Importing it
+                # alone does not make macOS recognize it as a codesigning
+                # identity, so trust it in this temporary build keychain.
+                run_executable_with_output('security', arguments=[
+                    'add-trusted-cert', '-r', 'trustRoot', '-k', keychain_name, file_path
+                ], check_result=True)
 
     run_executable_with_output('security', arguments=[
         'import',
