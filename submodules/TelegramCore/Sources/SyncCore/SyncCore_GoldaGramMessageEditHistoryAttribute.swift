@@ -49,6 +49,10 @@ public extension Message {
     var goldaGramEditHistory: GoldaGramMessageEditHistoryAttribute? {
         return self.attributes.first(where: { $0 is GoldaGramMessageEditHistoryAttribute }) as? GoldaGramMessageEditHistoryAttribute
     }
+
+    var goldaGramIsRedacted: Bool {
+        return self.goldaGramEditHistory?.isRedacted ?? false
+    }
 }
 
 public extension EngineMessage {
@@ -57,6 +61,6 @@ public extension EngineMessage {
     }
 
     var goldaGramIsRedacted: Bool {
-        return self.goldaGramEditHistory?.isRedacted ?? false
+        return self._asMessage().goldaGramIsRedacted
     }
 }
