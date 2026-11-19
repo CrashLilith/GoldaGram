@@ -634,6 +634,8 @@ def build(bazel, arguments):
     )
 
     bazel_command_line.set_configuration(arguments.configuration)
+    if arguments.disableProvisioningProfiles:
+        bazel_command_line.set_disable_provisioning_profiles()
     if arguments.embedWatchApp:
         if arguments.configuration in ('debug_arm64', 'release_arm64'):
             if arguments.watchApiId is None or arguments.watchApiHash is None:
@@ -1075,6 +1077,12 @@ if __name__ == '__main__':
         action='store_true',
         default=False,
         help='Continue build process after an error.',
+    )
+    buildParser.add_argument(
+        '--disableProvisioningProfiles',
+        action='store_true',
+        default=False,
+        help='Build an unsigned device IPA without embedding provisioning profiles (for sideloading workflows).',
     )
     buildParser.add_argument(
         '--showActions',
