@@ -2,8 +2,9 @@ import os
 import sys
 import argparse
 import shlex
+import subprocess
 
-from BuildEnvironment import run_executable_with_output
+from BuildEnvironment import get_clean_env, resolve_executable, run_executable_with_output
 
 def import_certificates(certificatesPath):
     if not os.path.exists(certificatesPath):
@@ -60,12 +61,23 @@ def import_certificates(certificatesPath):
                 '/usr/bin/security'
             ], check_result=file_path.endswith('.p12'))
             if file_name == 'Public.cer':
-                # The fake signing certificate is self-signed. Importing it
-                # alone does not make macOS recognize it as a codesigning
-                # identity, so trust it in this temporary build keychain.
-                run_executable_with_output('security', arguments=[
-                    'add-trusted-cert', '-r', 'trustRoot', '-k', keychain_name, file_path
-                ], check_result=True)
+                # Trust settings can block indefinitely on headless macOS
+                # runners. Bound the command and let the identity check below
+                # report whether the runner accepted the self-signed cert.
+                security = resolve_executable('security')
+                try:
+                    result = subprocess.run(
+                        [security, 'add-trusted-cert', '-r', 'trustRoot', '-k', keychain_name, file_path],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        env=get_clean_env(),
+                        timeout=10,
+                    )
+                    if result.returncode != 0:
+                        print('Warning: add-trusted-cert returned {}: {}'.format(result.returncode, result.stdout.strip()))
+                except subprocess.TimeoutExpired:
+                    print('Warning: add-trusted-cert timed out; checking codesigning identity directly')
 
     run_executable_with_output('security', arguments=[
         'import',
