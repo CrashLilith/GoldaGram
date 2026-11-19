@@ -352,7 +352,6 @@ extension ReplayContext {
 
             var updated = mergedServerMessageUpdate(previous: previousMessage, updated: message)
             let oldMedia = previousMessage.media.map { String(describing: type(of: $0)) }
-            let newMedia = message.media.map { String(describing: type(of: $0)) }
             let contentChanged = previousMessage.text != message.text || !areMediaArraysEqual(previousMessage.media, message.media)
             var history = previousMessage.goldaGramEditHistory
             if contentChanged {
