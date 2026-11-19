@@ -179,6 +179,18 @@ public final class Transaction {
         assert(!self.disposed)
         self.postbox?.deleteMessages(messageIds, forEachMedia: forEachMedia)
     }
+
+    /// Records server-deleted ids while keeping their local message rows for GoldaGram's deleted-message view.
+    public func recordRecentlyDeletedMessages(_ messageIds: [MessageId]) {
+        assert(!self.disposed)
+        self.postbox?.messageHistoryTable.recentlyDeletedMessages.add(ids: messageIds)
+    }
+
+    /// Global-id counterpart for messages that were already cached when a common-box delete arrived.
+    public func recordRecentlyDeletedMessageGlobalIds(_ ids: [Int32]) {
+        assert(!self.disposed)
+        self.postbox?.messageHistoryTable.recentlyDeletedMessages.add(globalIds: ids)
+    }
     
     public func deleteMessagesInRange(peerId: PeerId, namespace: MessageId.Namespace, minId: MessageId.Id, maxId: MessageId.Id, forEachMedia: ((Media) -> Void)?) {
         assert(!self.disposed)

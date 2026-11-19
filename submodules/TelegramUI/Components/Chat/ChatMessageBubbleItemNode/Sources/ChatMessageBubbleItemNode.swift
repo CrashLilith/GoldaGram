@@ -2983,6 +2983,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     context: item.context,
                     presentationData: item.presentationData,
                     edited: edited && !item.presentationData.isPreview,
+                    deleted: message.goldaGramDeletedDate != nil && !item.presentationData.isPreview,
+                    redacted: message.goldaGramIsRedacted && !item.presentationData.isPreview,
                     impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                     dateText: dateText,
                     type: statusType,

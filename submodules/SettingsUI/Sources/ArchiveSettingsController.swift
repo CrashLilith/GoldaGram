@@ -177,13 +177,13 @@ public func archiveSettingsController(context: AccountContext) -> ViewController
         context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
     )
     |> deliverOnMainQueue
-    |> map { presentationData, settings, appConfiguration, accountPeer -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, settings, appConfiguration, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
         var presentationData = presentationData
 
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
         presentationData = presentationData.withUpdated(theme: updatedTheme)
         
-        let isPremium = accountPeer?.isPremium ?? false
+        let isPremium = context.isPremium
         let isPremiumDisabled = PremiumConfiguration.with(appConfiguration: appConfiguration).isPremiumDisabled
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.ArchiveSettings_Title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))

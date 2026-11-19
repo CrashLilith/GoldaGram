@@ -6561,10 +6561,15 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             }
         })
         
-        self.accountPeerDisposable = (context.account.postbox.peerView(id: context.account.peerId)
-        |> deliverOnMainQueue).startStrict(next: { [weak self] peerView in
+        self.accountPeerDisposable = (combineLatest(
+            context.account.postbox.peerView(id: context.account.peerId),
+            context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.experimentalUISettings])
+        )
+        |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, sharedData in
             if let strongSelf = self {
-                let isPremium = peerView.peers[peerView.peerId]?.isPremium ?? false
+                let serverPremium = peerView.peers[peerView.peerId]?.isPremium ?? false
+                let experimentalSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.experimentalUISettings]?.get(ExperimentalUISettings.self) ?? .defaultSettings
+                let isPremium = serverPremium || experimentalSettings.localPremium
                 strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: false, { state in
                     return state.updatedIsPremium(isPremium)
                 })

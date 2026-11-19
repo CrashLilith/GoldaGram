@@ -961,10 +961,39 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     
     return dataSignal
     |> deliverOnMainQueue
-    |> map { [context] data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer -> ContextController.Items in
-        let isPremium = accountPeer?.isPremium ?? false
+    |> map { [context] data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, _ -> ContextController.Items in
+        let isPremium = context.isPremium
 
         var actions: [ContextMenuItem] = []
+
+        if messages.count == 1, let history = message.goldaGramEditHistory, !history.versions.isEmpty {
+            let isRussian = chatPresentationInterfaceState.strings.baseLanguageCode == "ru"
+            let title = isRussian ? "История редакций" : "Edit history"
+            let beforeLabel = isRussian ? "До" : "Before"
+            let afterLabel = isRussian ? "После" : "After"
+            let oldVersions = history.versions.enumerated().map { index, version in
+                let date = DateFormatter.localizedString(from: Date(timeIntervalSince1970: TimeInterval(version.date)), dateStyle: .short, timeStyle: .short)
+                var section = "\(beforeLabel) #\(index + 1) · \(date):\n\(version.text.isEmpty ? (isRussian ? "(пусто)" : "(empty)") : version.text)"
+                if !version.mediaSummary.isEmpty {
+                    section += "\n\(isRussian ? "Вложения" : "Attachments"): \(version.mediaSummary)"
+                }
+                return section
+            }
+            let currentMedia = message.media.map { String(describing: type(of: $0)) }
+            var currentSection = "\(afterLabel):\n\(message.text.isEmpty ? (isRussian ? "(пусто)" : "(empty)") : message.text)"
+            if !currentMedia.isEmpty {
+                currentSection += "\n\(isRussian ? "Вложения" : "Attachments"): \(currentMedia.joined(separator: ", "))"
+            }
+            let historyText = (oldVersions + [currentSection]).joined(separator: "\n\n")
+            actions.append(.action(ContextMenuActionItem(text: title, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Info"), color: theme.actionSheet.primaryTextColor)
+            }, action: { c, _ in
+                c?.dismiss(completion: {
+                    let alert = textAlertController(context: context, title: title, text: historyText, actions: [TextAlertAction(type: .defaultAction, title: isRussian ? "Закрыть" : "Close", action: {})])
+                    controllerInteraction.presentController(alert, nil)
+                })
+            })))
+        }
 
         if isSharedMediaPolls && messages.count == 1 {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
@@ -1534,6 +1563,43 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         Queue.mainQueue().after(0.2) {
                             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                             controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: isVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return true }), nil)
+                        }
+                    })
+                    f(.default)
+                })))
+            }
+        }
+
+        // Unlocked Stars media is represented by `.full`; previews stay in the unlock flow. Keep
+        // the sender's copy-protection and message lifetime rules in force for local exports.
+        if messages.count == 1, !message.containsSecretMedia, message.minAutoremoveOrClearTimeout == nil,
+           !chatPresentationInterfaceState.copyProtectionEnabled, !message.isCopyProtected(),
+           let paidContent = message.paidContent {
+            var paidMediaReference: AnyMediaReference?
+            var paidMediaIsVideo = false
+            for extendedMedia in paidContent.extendedMedia {
+                guard case let .full(media) = extendedMedia else {
+                    continue
+                }
+                if let image = media as? TelegramMediaImage, largestImageRepresentation(image.representations) != nil {
+                    paidMediaReference = ImageMediaReference.standalone(media: image).abstract
+                    break
+                } else if let file = media as? TelegramMediaFile, file.isVideo {
+                    paidMediaReference = FileMediaReference.standalone(media: file).abstract
+                    paidMediaIsVideo = true
+                    break
+                }
+            }
+            if let mediaReference = paidMediaReference {
+                actions.append(.action(ContextMenuActionItem(text: paidMediaIsVideo ? chatPresentationInterfaceState.strings.Gallery_SaveVideo : chatPresentationInterfaceState.strings.Gallery_SaveImage, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let _ = (saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: mediaReference)
+                    |> deliverOnMainQueue).startStandalone(completed: {
+                        Queue.mainQueue().after(0.2) {
+                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                            let title = paidMediaIsVideo ? presentationData.strings.Gallery_VideoSaved : presentationData.strings.Gallery_ImageSaved
+                            controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: title), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return true }), nil)
                         }
                     })
                     f(.default)

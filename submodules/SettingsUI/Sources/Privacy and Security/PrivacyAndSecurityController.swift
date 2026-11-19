@@ -47,8 +47,10 @@ private final class PrivacyAndSecurityControllerArguments {
     let openEmailSettings: (String?) -> Void
     let openMessagePrivacy: () -> Void
     let openGiftsPrivacy: () -> Void
+    let toggleGhostMode: (Bool) -> Void
+    let toggleLocalPremium: (Bool) -> Void
     
-    init(account: Account, openBlockedUsers: @escaping () -> Void, openLastSeenPrivacy: @escaping () -> Void, openGroupsPrivacy: @escaping () -> Void, openVoiceCallPrivacy: @escaping () -> Void, openProfilePhotoPrivacy: @escaping () -> Void, openForwardPrivacy: @escaping () -> Void, openPhoneNumberPrivacy: @escaping () -> Void, openVoiceMessagePrivacy: @escaping () -> Void, openBioPrivacy: @escaping () -> Void, openBirthdayPrivacy: @escaping () -> Void, openSavedMusicPrivacy: @escaping () -> Void, openPasscode: @escaping () -> Void, openTwoStepVerification: @escaping (TwoStepVerificationAccessConfiguration?) -> Void, openPasskeys: @escaping () -> Void, openActiveSessions: @escaping () -> Void, toggleArchiveAndMuteNonContacts: @escaping (Bool) -> Void, setupAccountAutoremove: @escaping () -> Void, setupMessageAutoremove: @escaping () -> Void, openDataSettings: @escaping () -> Void, openBrowserSelection: @escaping () -> Void, openEmailSettings: @escaping (String?) -> Void, openMessagePrivacy: @escaping () -> Void, openGiftsPrivacy: @escaping () -> Void) {
+    init(account: Account, openBlockedUsers: @escaping () -> Void, openLastSeenPrivacy: @escaping () -> Void, openGroupsPrivacy: @escaping () -> Void, openVoiceCallPrivacy: @escaping () -> Void, openProfilePhotoPrivacy: @escaping () -> Void, openForwardPrivacy: @escaping () -> Void, openPhoneNumberPrivacy: @escaping () -> Void, openVoiceMessagePrivacy: @escaping () -> Void, openBioPrivacy: @escaping () -> Void, openBirthdayPrivacy: @escaping () -> Void, openSavedMusicPrivacy: @escaping () -> Void, openPasscode: @escaping () -> Void, openTwoStepVerification: @escaping (TwoStepVerificationAccessConfiguration?) -> Void, openPasskeys: @escaping () -> Void, openActiveSessions: @escaping () -> Void, toggleArchiveAndMuteNonContacts: @escaping (Bool) -> Void, setupAccountAutoremove: @escaping () -> Void, setupMessageAutoremove: @escaping () -> Void, openDataSettings: @escaping () -> Void, openBrowserSelection: @escaping () -> Void, openEmailSettings: @escaping (String?) -> Void, openMessagePrivacy: @escaping () -> Void, openGiftsPrivacy: @escaping () -> Void, toggleGhostMode: @escaping (Bool) -> Void, toggleLocalPremium: @escaping (Bool) -> Void) {
         self.account = account
         self.openBlockedUsers = openBlockedUsers
         self.openLastSeenPrivacy = openLastSeenPrivacy
@@ -73,6 +75,8 @@ private final class PrivacyAndSecurityControllerArguments {
         self.openEmailSettings = openEmailSettings
         self.openMessagePrivacy = openMessagePrivacy
         self.openGiftsPrivacy = openGiftsPrivacy
+        self.toggleGhostMode = toggleGhostMode
+        self.toggleLocalPremium = toggleLocalPremium
     }
 }
 
@@ -85,6 +89,7 @@ private enum PrivacyAndSecuritySection: Int32 {
     case dataSettings
     case loginEmail
     case linkHandling
+    case goldaGram
 }
 
 public enum PrivacyAndSecurityEntryTag: ItemListItemTag {
@@ -135,6 +140,10 @@ private enum PrivacyAndSecurityEntry: ItemListNodeEntry {
     case dataSettings(PresentationTheme, String)
     case dataSettingsInfo(PresentationTheme, String)
     case openLinksIn(PresentationTheme, String, String)
+    case ghostMode(PresentationTheme, Bool)
+    case goldaGramHeader(String)
+    case localPremium(Bool)
+    case goldaGramInfo(String)
     
     var section: ItemListSectionId {
         switch self {
@@ -152,6 +161,8 @@ private enum PrivacyAndSecurityEntry: ItemListNodeEntry {
             return PrivacyAndSecuritySection.dataSettings.rawValue
         case .openLinksIn:
             return PrivacyAndSecuritySection.linkHandling.rawValue
+        case .ghostMode, .goldaGramHeader, .localPremium, .goldaGramInfo:
+            return PrivacyAndSecuritySection.goldaGram.rawValue
         }
     }
     
@@ -223,6 +234,14 @@ private enum PrivacyAndSecurityEntry: ItemListNodeEntry {
                 return 32
             case .openLinksIn:
                 return 33
+            case .ghostMode:
+                return 35
+            case .goldaGramHeader:
+                return 34
+            case .localPremium:
+                return 36
+            case .goldaGramInfo:
+                return 37
         }
     }
     
@@ -426,6 +445,30 @@ private enum PrivacyAndSecurityEntry: ItemListNodeEntry {
                 } else {
                     return false
                 }
+            case let .ghostMode(lhsTheme, lhsValue):
+                if case let .ghostMode(rhsTheme, rhsValue) = rhs, lhsTheme === rhsTheme, lhsValue == rhsValue {
+                    return true
+                } else {
+                    return false
+                }
+            case let .goldaGramHeader(lhsText):
+                if case let .goldaGramHeader(rhsText) = rhs, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .localPremium(lhsValue):
+                if case let .localPremium(rhsValue) = rhs, lhsValue == rhsValue {
+                    return true
+                } else {
+                    return false
+                }
+            case let .goldaGramInfo(lhsText):
+                if case let .goldaGramInfo(rhsText) = rhs, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
         }
     }
     
@@ -549,6 +592,20 @@ private enum PrivacyAndSecurityEntry: ItemListNodeEntry {
                 return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: text, label: value, sectionId: self.section, style: .blocks, action: {
                     arguments.openBrowserSelection()
                 })
+            case let .ghostMode(_, value):
+                let title = presentationData.strings.baseLanguageCode == "ru" ? "Режим призрака (без отметок о чтении и просмотрах историй)" : "Ghost Mode (hide read receipts and story views)"
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleGhostMode(value)
+                })
+            case let .goldaGramHeader(text):
+                return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+            case let .localPremium(value):
+                let title = presentationData.strings.baseLanguageCode == "ru" ? "Локальный Premium (только интерфейс)" : "Local Premium (client only)"
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleLocalPremium(value)
+                })
+            case let .goldaGramInfo(text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -660,7 +717,9 @@ private func privacyAndSecurityControllerEntries(
     loginEmail: String?,
     accountPeer: EnginePeer?,
     defaultWebBrowser: String,
-    appConfiguration: AppConfiguration
+    appConfiguration: AppConfiguration,
+    ghostModeEnabled: Bool,
+    localPremiumEnabled: Bool
 ) -> [PrivacyAndSecurityEntry] {
     var entries: [PrivacyAndSecurityEntry] = []
     
@@ -824,6 +883,11 @@ private func privacyAndSecurityControllerEntries(
     
     entries.append(.openLinksIn(presentationData.theme, presentationData.strings.ChatSettings_OpenLinksIn, defaultWebBrowser))
 
+    entries.append(.goldaGramHeader("GoldaGram"))
+    entries.append(.ghostMode(presentationData.theme, ghostModeEnabled))
+    entries.append(.localPremium(localPremiumEnabled))
+    let localPremiumInfo = presentationData.strings.baseLanguageCode == "ru" ? "Удалённые сообщения сохраняются в чате локально. Секретные и автоудаляющиеся сообщения не сохраняются. Премиум-возможности на сервере Telegram проверяются отдельно." : "Deleted messages stay in chat locally. Secret and auto-delete messages are not retained. Telegram checks server-side Premium features separately."
+    entries.append(.goldaGramInfo(localPremiumInfo))
     return entries
 }
 
@@ -1557,6 +1621,18 @@ public func privacyAndSecurityController(
                 }), true)
             }
         }))
+    }, toggleGhostMode: { value in
+        let _ = updateExperimentalUISettingsInteractively(accountManager: context.sharedContext.accountManager) { settings in
+            var settings = settings
+            settings.skipReadHistory = value
+            return settings
+        }.start()
+    }, toggleLocalPremium: { value in
+        let _ = updateExperimentalUISettingsInteractively(accountManager: context.sharedContext.accountManager) { settings in
+            var settings = settings
+            settings.localPremium = value
+            return settings
+        }.start()
     })
     
     actionsDisposable.add(context.engine.peers.managedUpdatedRecentPeers().start())
@@ -1615,7 +1691,7 @@ public func privacyAndSecurityController(
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.PrivacySettings_Title), leftNavigationButton: nil, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back), animateChanges: false)
         
-        let isPremium = accountPeer?.isPremium ?? false
+        let isPremium = context.isPremium
         let isPremiumDisabled = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 }).isPremiumDisabled
         let localWebBrowserSettings = webBrowserData.0.entries[ApplicationSpecificSharedDataKeys.webBrowserSettings]?.get(WebBrowserSettings.self) ?? WebBrowserSettings.defaultSettings
         let accountWebBrowserSettings = webBrowserData.1?.get(AccountWebBrowserSettings.self) ?? AccountWebBrowserSettings.defaultSettings
@@ -1636,7 +1712,7 @@ public func privacyAndSecurityController(
             defaultWebBrowser = presentationData.strings.WebBrowser_Telegram
         }
         
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: privacyAndSecurityControllerEntries(presentationData: presentationData, state: state, privacySettings: privacySettings, accessChallengeData: accessChallengeData.data, blockedPeerCount: blockedPeersState.totalCount, activeWebsitesCount: activeWebsitesState.sessions.count, hasTwoStepAuth: twoStepAuth.0, twoStepAuthData: twoStepAuth.1, hasPasskeys: passkeys.0, displayPasskeys: displayPasskeys, canAutoarchive: canAutoarchive, isPremiumDisabled: isPremiumDisabled, isPremium: isPremium, loginEmail: loginEmail, accountPeer: accountPeer, defaultWebBrowser: defaultWebBrowser, appConfiguration: appConfiguration), style: .blocks, ensureVisibleItemTag: focusOnItemTag, animateChanges: false)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: privacyAndSecurityControllerEntries(presentationData: presentationData, state: state, privacySettings: privacySettings, accessChallengeData: accessChallengeData.data, blockedPeerCount: blockedPeersState.totalCount, activeWebsitesCount: activeWebsitesState.sessions.count, hasTwoStepAuth: twoStepAuth.0, twoStepAuthData: twoStepAuth.1, hasPasskeys: passkeys.0, displayPasskeys: displayPasskeys, canAutoarchive: canAutoarchive, isPremiumDisabled: isPremiumDisabled, isPremium: isPremium, loginEmail: loginEmail, accountPeer: accountPeer, defaultWebBrowser: defaultWebBrowser, appConfiguration: appConfiguration, ghostModeEnabled: context.sharedContext.immediateExperimentalUISettings.skipReadHistory, localPremiumEnabled: context.sharedContext.immediateExperimentalUISettings.localPremium), style: .blocks, ensureVisibleItemTag: focusOnItemTag, animateChanges: false)
         
         return (controllerState, (listState, arguments))
     }

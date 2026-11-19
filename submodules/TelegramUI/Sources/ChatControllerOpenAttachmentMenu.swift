@@ -1421,8 +1421,8 @@ extension ChatControllerImpl {
             guard let strongSelf = self else {
                 return
             }
-            let (accountPeer, limits, premiumLimits) = result
-            let isPremium = accountPeer?.isPremium ?? false
+            let (_, limits, premiumLimits) = result
+            let isPremium = strongSelf.context.isPremium
 
             strongSelf.present(legacyICloudFilePicker(theme: strongSelf.presentationData.theme, hasMultiselection: !editingMessage, documentTypes: documentTypes, completion: { [weak self] urls in
                 if let strongSelf = self, !urls.isEmpty {

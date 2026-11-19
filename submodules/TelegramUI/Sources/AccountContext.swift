@@ -560,10 +560,16 @@ public final class AccountContextImpl: AccountContext {
             strongSelf.tonGiftStickersPromise.set(.single(stickers))
         })
         
-        self.userLimitsConfigurationDisposable = (self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId))
-        |> mapToSignal { peer -> Signal<(Bool, EngineConfiguration.UserLimits), NoError> in
-            let isPremium = peer?.isPremium ?? false
-            return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: isPremium))
+        self.userLimitsConfigurationDisposable = (combineLatest(
+            self.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: account.peerId)),
+            self.sharedContextImpl.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.experimentalUISettings])
+        )
+        |> mapToSignal { peer, sharedData -> Signal<(Bool, EngineConfiguration.UserLimits), NoError> in
+            let serverPremium = peer?.isPremium ?? false
+            let experimentalSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.experimentalUISettings]?.get(ExperimentalUISettings.self) ?? .defaultSettings
+            // Local Premium affects client-side gates; server-provided limits remain tied to the real account status.
+            let isPremium = serverPremium || experimentalSettings.localPremium
+            return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: serverPremium))
             |> map { userLimits in
                 return (isPremium, userLimits)
             }

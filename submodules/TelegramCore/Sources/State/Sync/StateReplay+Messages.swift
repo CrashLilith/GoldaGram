@@ -274,10 +274,17 @@ extension ReplayContext {
     }
     
     func applyDeleteMessagesWithGlobalIds(_ ids: [Int32]) {
+        let resolvedIds = transaction.messageIdsForGlobalIds(ids)
+        let retainedIds = self.retainDeletedMessages(resolvedIds)
+        let retainedGlobalIds = Set(retainedIds.map(\.id))
+        transaction.recordRecentlyDeletedMessageGlobalIds(Array(retainedGlobalIds))
+        let idsToDelete = ids.filter { !retainedGlobalIds.contains($0) }
         var resourceIds: [MediaResourceId] = []
-        transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
-            addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
-        })
+        if !idsToDelete.isEmpty {
+            transaction.deleteMessagesWithGlobalIds(idsToDelete, forEachMedia: { media in
+                addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
+            })
+        }
         if !resourceIds.isEmpty {
             let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
         }
@@ -285,10 +292,35 @@ extension ReplayContext {
     }
     
     func applyDeleteMessages(_ ids: [MessageId]) {
-        _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
-            self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
-        })
+        let retainedIds = self.retainDeletedMessages(ids)
+        transaction.recordRecentlyDeletedMessages(Array(retainedIds))
+        let idsToDelete = ids.filter { !retainedIds.contains($0) }
+        if !idsToDelete.isEmpty {
+            _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: idsToDelete, manualAddMessageThreadStatsDifference: { id, add, remove in
+                self.addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
+            })
+        }
         deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
+    }
+
+    private func retainDeletedMessages(_ ids: [MessageId]) -> Set<MessageId> {
+        var retainedIds = Set<MessageId>()
+        let date = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
+        for id in ids {
+            guard id.peerId.namespace != Namespaces.Peer.SecretChat else {
+                continue
+            }
+            transaction.updateMessage(id, update: { message in
+                guard !message.attributes.contains(where: { $0 is AutoremoveTimeoutMessageAttribute || $0 is AutoclearTimeoutMessageAttribute }) else {
+                    return .skip
+                }
+                var attributes = message.attributes.filter { !($0 is GoldaGramDeletedMessageAttribute) }
+                attributes.append(GoldaGramDeletedMessageAttribute(date: date))
+                retainedIds.insert(id)
+                return .update(StoreMessage(updating: message, attributes: attributes, tags: message.tags))
+            })
+        }
+        return retainedIds
     }
     
     func applyUpdateMinAvailableMessage(_ id: MessageId) {
@@ -306,6 +338,7 @@ extension ReplayContext {
     
     func applyEditMessage(_ id: MessageId, _ message: StoreMessage) {
         var generatedEvent: (reactionAuthor: Peer, reaction: MessageReaction.Reaction, message: Message, timestamp: Int32)?
+        var editedMessage: StoreMessage?
         transaction.updateMessage(id, update: { previousMessage in
             let peers: [PeerId:Peer] = previousMessage.peers.reduce([:], { current, value in
                 var current = current
@@ -317,12 +350,32 @@ extension ReplayContext {
                 generatedEvent = reactionGeneratedEvent(previousMessage.reactionsAttribute, message.reactionsAttribute, message: message, transaction: transaction)
             }
 
-            return .update(mergedServerMessageUpdate(previous: previousMessage, updated: message))
+            var updated = mergedServerMessageUpdate(previous: previousMessage, updated: message)
+            let oldMedia = previousMessage.media.map { String(describing: type(of: $0)) }
+            let newMedia = message.media.map { String(describing: type(of: $0)) }
+            let contentChanged = previousMessage.text != message.text || !areMediaArraysEqual(previousMessage.media, message.media)
+            var history = previousMessage.goldaGramEditHistory
+            if contentChanged {
+                var versions = history?.versions ?? []
+                let oldSummary = oldMedia.isEmpty ? "" : oldMedia.joined(separator: ", ")
+                if versions.last?.text != previousMessage.text || versions.last?.mediaSummary != oldSummary {
+                    versions.append(GoldaGramMessageEditVersion(date: previousMessage.editedTime ?? previousMessage.timestamp, text: previousMessage.text, mediaSummary: oldSummary))
+                }
+                let becameRedacted = !previousMessage.text.isEmpty && message.text.isEmpty
+                history = GoldaGramMessageEditHistoryAttribute(versions: versions, isRedacted: (history?.isRedacted ?? false) || becameRedacted)
+            }
+            if let history {
+                var attributes = updated.attributes.filter { !($0 is GoldaGramMessageEditHistoryAttribute) }
+                attributes.append(history)
+                updated = updated.withUpdatedAttributes(attributes)
+            }
+            editedMessage = updated
+            return .update(updated)
         })
         // A fetch in flight may be bringing the message with its old content, over the edited one or, with none stored
         // here, instead of it; it stores this edit in its place (Postbox's record of recent edits,
         // `fetchedMessagesWithRecentEdits`; owner decision 2026-10-25).
-        transaction.recordMessageEdit(message)
+        transaction.recordMessageEdit(editedMessage ?? message)
         if let generatedEvent = generatedEvent {
             addedReactionEvents.append(generatedEvent)
         }
