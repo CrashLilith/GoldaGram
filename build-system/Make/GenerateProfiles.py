@@ -97,26 +97,28 @@ def get_certificate_base64_from_p12(p12_path, p12_password=''):
     return base64.b64encode(cert_der).decode('utf-8')
 
 
-def process_provisioning_profile(source, destination, certificate_data, signing_identity, keychain_name):
+def _rewrite_profile_value(value, old_bundle_id, bundle_id):
+    if isinstance(value, str):
+        return value.replace(old_bundle_id, bundle_id)
+    if isinstance(value, list):
+        return [_rewrite_profile_value(item, old_bundle_id, bundle_id) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_profile_value(item, old_bundle_id, bundle_id) for key, item in value.items()}
+    return value
+
+
+def process_provisioning_profile(source, destination, certificate_data, signing_identity, keychain_name, old_bundle_id=None, bundle_id=None):
     parsed_plist = run_executable_with_output('security', arguments=['cms', '-D', '-i', source], check_result=True)
-    parsed_plist_file = tempfile.mktemp()
-    with open(parsed_plist_file, 'w+') as file:
-        file.write(parsed_plist)
+    profile = plistlib.loads(parsed_plist.encode('utf-8'))
+    entitlements = profile.get('Entitlements', {})
+    if old_bundle_id and bundle_id:
+        profile['Entitlements'] = _rewrite_profile_value(entitlements, old_bundle_id, bundle_id)
+    profile['DeveloperCertificates'] = [base64.b64decode(certificate_data)]
+    profile.pop('DER-Encoded-Profile', None)
 
-    # Remove all existing developer certificates
-    while True:
-        result = run_executable_with_output('plutil', arguments=['-remove', 'DeveloperCertificates.0', parsed_plist_file], check_result=False)
-        if result is None or 'Could not' in str(result) or result == '':
-            # Check if the removal actually failed by trying to extract
-            check = run_executable_with_output('plutil', arguments=['-extract', 'DeveloperCertificates.0', 'raw', parsed_plist_file], check_result=False)
-            if check is None or 'Could not' in str(check):
-                break
-
-    # Insert the new certificate
-    run_executable_with_output('plutil', arguments=['-insert', 'DeveloperCertificates.0', '-data', certificate_data, parsed_plist_file])
-
-    # Remove the DER-Encoded-Profile (signature)
-    run_executable_with_output('plutil', arguments=['-remove', 'DER-Encoded-Profile', parsed_plist_file])
+    descriptor, parsed_plist_file = tempfile.mkstemp()
+    with os.fdopen(descriptor, 'wb') as file:
+        plistlib.dump(profile, file, fmt=plistlib.FMT_XML)
 
     # Sign with the certificate from the temporary keychain
     run_executable_with_output('security', arguments=[
@@ -126,7 +128,7 @@ def process_provisioning_profile(source, destination, certificate_data, signing_
     os.unlink(parsed_plist_file)
 
 
-def generate_provisioning_profiles(source_path, destination_path, certs_path):
+def generate_provisioning_profiles(source_path, destination_path, certs_path, old_bundle_id=None, bundle_id=None):
     p12_path = os.path.join(certs_path, 'SelfSigned.p12')
 
     if not os.path.exists(p12_path):
@@ -160,10 +162,34 @@ def generate_provisioning_profiles(source_path, destination_path, certs_path):
                     destination=os.path.join(destination_path, file_name),
                     certificate_data=certificate_data,
                     signing_identity=signing_identity,
-                    keychain_name=keychain_name
+                    keychain_name=keychain_name,
+                    old_bundle_id=old_bundle_id,
+                    bundle_id=bundle_id
                 )
         print('Done. Generated {} profiles.'.format(
             len([f for f in os.listdir(destination_path) if f.endswith('.mobileprovision')])
         ))
     finally:
         cleanup_temp_keychain(keychain_name)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Re-sign provisioning profiles for an unsigned sideloading build.')
+    parser.add_argument('--source', required=True)
+    parser.add_argument('--destination', required=True)
+    parser.add_argument('--certs-path', required=True)
+    parser.add_argument('--old-bundle-id', required=True)
+    parser.add_argument('--bundle-id', required=True)
+    args = parser.parse_args()
+    os.makedirs(args.destination, exist_ok=True)
+    generate_provisioning_profiles(
+        source_path=args.source,
+        destination_path=args.destination,
+        certs_path=args.certs_path,
+        old_bundle_id=args.old_bundle_id,
+        bundle_id=args.bundle_id,
+    )
+
+
+if __name__ == '__main__':
+    main()

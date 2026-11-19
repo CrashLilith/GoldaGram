@@ -304,38 +304,10 @@ class DirectoryCodesigningSource(CodesigningSource):
         pass
 
     def copy_profiles_to_destination(self, destination_path):
-        profiles_path = self.directory_path + '/profiles'
-        copy_profiles_from_directory(source_path=profiles_path, destination_path=destination_path, team_id=self.team_id, bundle_id=self.bundle_id)
-        # The repository's fake profiles are used only to produce an unsigned
-        # sideloading artifact. They are Telegram's checked-in profiles, so
-        # their application identifiers cannot match a fork's bundle ID. Keep
-        # them available to Bazel under the expected target names; they are not
-        # valid signing profiles for distribution.
-        if os.path.basename(os.path.normpath(self.directory_path)) == 'fake-codesigning' and not os.listdir(destination_path):
-            profile_name_mapping = {
-                'BroadcastUpload.mobileprovision': 'BroadcastUpload.mobileprovision',
-                'Intents.mobileprovision': 'Intents.mobileprovision',
-                'NotificationContent.mobileprovision': 'NotificationContent.mobileprovision',
-                'NotificationService.mobileprovision': 'NotificationService.mobileprovision',
-                'Share.mobileprovision': 'Share.mobileprovision',
-                'Telegram.mobileprovision': 'Telegram.mobileprovision',
-                'WatchApp.mobileprovision': 'WatchApp.mobileprovision',
-                'WatchExtension.mobileprovision': 'WatchExtension.mobileprovision',
-                'Widget.mobileprovision': 'Widget.mobileprovision',
-            }
-            for source_name, destination_name in profile_name_mapping.items():
-                source = os.path.join(profiles_path, source_name)
-                if os.path.isfile(source):
-                    shutil.copyfile(source, os.path.join(destination_path, destination_name))
+        copy_profiles_from_directory(source_path=self.directory_path + '/profiles', destination_path=destination_path, team_id=self.team_id, bundle_id=self.bundle_id)
 
     def resolve_aps_environment(self):
-        profiles_path = self.directory_path + '/profiles'
-        result = resolve_aps_environment_from_directory(source_path=profiles_path, team_id=self.team_id, bundle_id=self.bundle_id)
-        if result is None and os.path.basename(os.path.normpath(self.directory_path)) == 'fake-codesigning':
-            # These profiles are deliberately fake and only supply build-time
-            # entitlements for an unsigned sideloading IPA.
-            result = resolve_aps_environment_from_directory(source_path=profiles_path, team_id='C67CF9S4VU', bundle_id='ph.telegra.Telegraph')
-        return result
+        return resolve_aps_environment_from_directory(source_path=self.directory_path + '/profiles', team_id=self.team_id, bundle_id=self.bundle_id)
 
     def use_xcode_managed_codesigning(self):
         return False
