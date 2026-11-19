@@ -7,6 +7,7 @@ import plistlib
 import argparse
 import subprocess
 import base64
+import datetime
 
 from BuildEnvironment import run_executable_with_output, check_run_system
 
@@ -113,6 +114,10 @@ def process_provisioning_profile(source, destination, certificate_data, signing_
     entitlements = profile.get('Entitlements', {})
     if old_bundle_id and bundle_id:
         profile['Entitlements'] = _rewrite_profile_value(entitlements, old_bundle_id, bundle_id)
+        # These are self-signed profiles for unsigned sideload builds, not
+        # Apple-issued distribution profiles. The checked-in template profiles
+        # are expired, so give only the generated copies a usable lifetime.
+        profile['ExpirationDate'] = datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc)
     profile['DeveloperCertificates'] = [base64.b64decode(certificate_data)]
     profile.pop('DER-Encoded-Profile', None)
 
